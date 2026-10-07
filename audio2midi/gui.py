@@ -38,6 +38,7 @@ class App(ttk.Frame):
         self.bpm = tk.StringVar(value="130")
         self.quant = tk.StringVar(value="off")
         self.sens = tk.DoubleVar(value=0.5)
+        self.full_mix = tk.BooleanVar(value=False)
         self.msgs: "queue.Queue[tuple[str, object]]" = queue.Queue()
         self.last_out = ""
 
@@ -66,6 +67,12 @@ class App(ttk.Frame):
         ttk.Label(sens_row, text="fewer notes").grid(row=0, column=0)
         ttk.Scale(sens_row, from_=0, to=1, variable=self.sens).grid(row=0, column=1, sticky="ew", padx=6)
         ttk.Label(sens_row, text="more notes").grid(row=0, column=2)
+
+        ttk.Checkbutton(
+            f3,
+            text="Drums come from a whole song (ignore toms, open hats, crash)",
+            variable=self.full_mix,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
         f4 = ttk.Frame(self)
         f4.grid(row=3, sticky="ew", pady=8)
@@ -125,6 +132,7 @@ class App(ttk.Frame):
         if not out:
             return
         mode, quant, sens = MODE_LABELS[self.mode.get()], self.quant.get(), float(self.sens.get())
+        full_mix = bool(self.full_mix.get())
         self.go.configure(state="disabled")
         self.show.configure(state="disabled")
         self.bar.start(12)
@@ -132,7 +140,7 @@ class App(ttk.Frame):
 
         def work() -> None:
             try:
-                a2m.convert(src, out, mode, bpm, quant, sens, log=lambda m: self.msgs.put(("log", m)))
+                a2m.convert(src, out, mode, bpm, quant, sens, log=lambda m: self.msgs.put(("log", m)), full_mix_drums=full_mix)
                 self.msgs.put(("done", out))
             except Exception as e:  # noqa: BLE001 - shown to the user
                 self.msgs.put(("error", str(e)))

@@ -57,6 +57,9 @@ In the program window, go from top to bottom:
    - **Snap to grid:** `off` keeps the exact timing of the recording.
      `1/16` nudges every note onto the nearest sixteenth-note line, which is
      tidier for electronic music.
+   - **Drums come from a whole song:** tick this when the sound is a finished song
+     (not an isolated drum loop). The program then only writes kick, snare and hi-hat,
+     because in a full mix it often mistakes vocals and synths for toms and open hats.
    - **Sensitivity:** slide right if notes are missing, left if there are
      too many wrong little notes.
 4. Click **Convert to MIDI**, choose where to save, and wait. A 3-minute song takes only a few seconds.
@@ -102,7 +105,8 @@ Computers listening to music is hard. It is good, not magic.
   hardest to hear correctly. Expect to fix a few notes by hand.
 - **Drums:** best on a drum loop *by itself*. In a full song, bass and other sounds get
   mixed up with the kick and the snare. If a snare and a hat hit at the very same instant,
-  only the snare is written down.
+  only the snare is written down. For drums taken from a whole song, tick
+  **Drums come from a whole song** to avoid invented toms and open hats.
 - It does not copy pitch bends, slides or how long a note rings in a fancy way.
   Everything is plain notes with a loudness.
 - It does not guess the tempo for you. You type it.
@@ -149,6 +153,7 @@ python audio2midi.py my_vocal.mp3 -m melody -s 0.6 -o vocal.mid
 - `--bpm` is your project tempo
 - `-q` is `off`, `1/4`, `1/8`, `1/16` or `1/32`
 - `-s` is sensitivity from `0` to `1`
+- `--full-mix-drums` is the same as the tick box above
 
 ## Make a real `.exe` (optional)
 

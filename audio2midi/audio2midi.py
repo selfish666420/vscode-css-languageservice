@@ -356,7 +356,10 @@ def audio_to_chords(x: np.ndarray, sr: int, sensitivity: float = 0.5, max_poly: 
 # --------------------------------------------------------------------------
 
 
-def audio_to_drums(x: np.ndarray, sr: int, sensitivity: float = 0.5) -> List[Note]:
+def audio_to_drums(x: np.ndarray, sr: int, sensitivity: float = 0.5, full_mix: bool = False) -> List[Note]:
+    """full_mix=True is for drums heard inside a whole song: only kick, snare and
+    (closed) hat are reported. Toms, open hats and crashes are skipped because vocals,
+    synths and bass get mistaken for them."""
     n_fft, hop = 1024, 128
     win = signal.windows.hann(n_fft, sym=False)
     frames = _frames(x, n_fft, hop)
@@ -423,14 +426,19 @@ def audio_to_drums(x: np.ndarray, sr: int, sensitivity: float = 0.5) -> List[Not
             hits.append(KICK)
         if fm >= 0.22 and fhi >= 0.22 and fl < 0.8:
             hits.append(SNARE)
-        elif fm >= 0.45 and fhi < 0.22 and fl < 0.5:
+        elif fm >= 0.45 and fhi < 0.22 and fl < 0.5 and not full_mix:
             band = (freqs >= 80) & (freqs < 400)
             seg = mags[o : o + post_n][:, band].mean(axis=0)
             cen = float((seg * freqs[band]).sum() / max(seg.sum(), 1e-12))
             hits.append(TOM_LOW if cen < 140 else TOM_MID if cen < 220 else TOM_HIGH)
         if fhi >= 0.50 and fm < 0.22 and fl < 0.3:
-            hits.append(CRASH if ring > 0.50 else OPEN_HAT if ring > 0.09 else CLOSED_HAT)
+            if full_mix:
+                hits.append(CLOSED_HAT)
+            else:
+                hits.append(CRASH if ring > 0.50 else OPEN_HAT if ring > 0.09 else CLOSED_HAT)
         if not hits:
+            if full_mix and fm >= 0.45 and fhi < 0.22 and fl < 0.5:
+                continue  # tonal mid-range hit (voice / synth), not a drum
             hits.append(max((fl, KICK), (fm, SNARE), (fhi, CLOSED_HAT))[1])
         recs.append({"t": t0, "vel": vel, "hits": hits, "hi2": gain["hi2"], "ring": ring})
 
@@ -441,7 +449,7 @@ def audio_to_drums(x: np.ndarray, sr: int, sensitivity: float = 0.5) -> List[Not
         ref_hat = float(np.median(pure))
         for r in recs:
             if r["hits"] == [KICK] and r["hi2"] >= 0.5 * ref_hat:
-                r["hits"].append(OPEN_HAT if r["ring"] > 0.09 else CLOSED_HAT)
+                r["hits"].append(OPEN_HAT if r["ring"] > 0.09 and not full_mix else CLOSED_HAT)
 
     notes = [Note(r["t"], r["t"] + 0.10, h, r["vel"]) for r in recs for h in r["hits"]]
     notes.sort(key=lambda n: (n.start, n.pitch))
@@ -537,6 +545,7 @@ def convert(
     quantize: str = "off",
     sensitivity: float = 0.5,
     log: Optional[Callable[[str], None]] = None,
+    full_mix_drums: bool = False,
 ) -> List[Track]:
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}")
@@ -579,7 +588,7 @@ def convert(
         tracks.append(Track("Chords", audio_to_chords(x, sr, sensitivity), channel=1))
     if mode in ("drums", "all"):
         say("Listening for drums ...")
-        tracks.append(Track("Drums", audio_to_drums(x, sr, sensitivity), channel=9))
+        tracks.append(Track("Drums", audio_to_drums(x, sr, sensitivity, full_mix=full_mix_drums), channel=9))
 
     for tr in tracks:
         tr.notes = quantize_notes(tr.notes, bpm, quantize)
@@ -599,11 +608,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("-m", "--mode", choices=MODES, default="melody")
     ap.add_argument("--bpm", type=float, default=130.0, help="your FL Studio project tempo")
     ap.add_argument("-q", "--quantize", choices=QUANTIZE_CHOICES, default="off")
+    ap.add_argument("--full-mix-drums", action="store_true", help="drums come from a whole song: skip toms/open hats/crash")
     ap.add_argument("-s", "--sensitivity", type=float, default=0.5, help="0 (strict) .. 1 (picks up more)")
     args = ap.parse_args(argv)
     out = args.output or os.path.splitext(args.input)[0] + ".mid"
     try:
-        convert(args.input, out, args.mode, args.bpm, args.quantize, args.sensitivity, log=print)
+        convert(args.input, out, args.mode, args.bpm, args.quantize, args.sensitivity, log=print, full_mix_drums=args.full_mix_drums)
     except Exception as e:  # noqa: BLE001 - show a friendly message
         print(f"Error: {e}", file=sys.stderr)
         return 1

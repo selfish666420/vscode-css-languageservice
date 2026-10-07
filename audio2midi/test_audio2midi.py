@@ -310,3 +310,41 @@ def test_song_mode_without_demucs_gives_install_hint(monkeypatch):
     src = write_wav(tone(60, 1.0), "nodemucs.wav")
     with pytest.raises(RuntimeError, match="pip install -r requirements-stems.txt"):
         a2m.convert(src, src + ".mid", "song")
+
+
+# ---- full-mix drums setting ----
+
+def _tom(sr=SR):
+    t = np.arange(int(0.3 * sr)) / sr
+    return (0.7 * np.sin(2 * np.pi * 170 * t) * np.exp(-t * 12)).astype(np.float32)
+
+
+def test_full_mix_drums_skips_toms_and_open_hats_but_keeps_kick_snare():
+    y = place([(0.2, _kick()), (0.9, _tom()), (1.6, _hat(0.4)), (2.3, _snare()), (3.0, _hat(0.04))], 3.6)
+    x, sr = a2m.load_audio(write_wav(y, "fm.wav"))
+    normal = {n.pitch for n in a2m.audio_to_drums(x, sr)}
+    mixed = a2m.audio_to_drums(x, sr, full_mix=True)
+    assert normal & {a2m.TOM_LOW, a2m.TOM_MID, a2m.TOM_HIGH}, normal  # the tom is heard normally
+    assert a2m.OPEN_HAT in normal
+    got = {n.pitch for n in mixed}
+    assert not got & {a2m.TOM_LOW, a2m.TOM_MID, a2m.TOM_HIGH, a2m.OPEN_HAT, a2m.CRASH}, got
+    assert {a2m.KICK, a2m.SNARE, a2m.CLOSED_HAT} <= got
+    # the open hat is still written, just as a closed hat
+    assert sum(1 for n in mixed if n.pitch == a2m.CLOSED_HAT) == 2
+
+
+def test_convert_passes_full_mix_flag(tmp_path):
+    y = place([(0.2, _kick()), (0.9, _tom()), (1.6, _snare())], 2.4)
+    src = write_wav(y, "fm2.wav")
+    tr = a2m.convert(src, str(tmp_path / "a.mid"), "drums", full_mix_drums=True)
+    assert not {n.pitch for n in tr[0].notes} & {a2m.TOM_LOW, a2m.TOM_MID, a2m.TOM_HIGH}
+    tr = a2m.convert(src, str(tmp_path / "b.mid"), "drums")
+    assert {n.pitch for n in tr[0].notes} & {a2m.TOM_LOW, a2m.TOM_MID, a2m.TOM_HIGH}
+
+
+def test_cli_flag(tmp_path):
+    src = write_wav(place([(0.2, _kick()), (0.9, _tom())], 1.6), "cli.wav")
+    out = str(tmp_path / "cli.mid")
+    assert a2m.main([src, "-m", "drums", "--full-mix-drums", "-o", out]) == 0
+    _, _, tracks = read_midi(out)
+    assert {n[2] for n in tracks["Drums"]} == {a2m.KICK}
