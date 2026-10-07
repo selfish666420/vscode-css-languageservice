@@ -245,3 +245,68 @@ def test_errors_are_friendly():
         a2m.convert(ok, ok + ".mid", mode="nope")
     with pytest.raises(ValueError):
         a2m.convert(ok, ok + ".mid", bpm=5)
+
+
+# ---- stem separation (Demucs is replaced by a stand-in that writes 4 known stems) ----
+
+FAKE_DEMUCS = '''
+import os, sys
+import numpy as np, soundfile as sf
+a = sys.argv[1:]
+out, path = a[a.index("-o") + 1], a[-1]
+track = os.path.splitext(os.path.basename(path))[0]
+d = os.path.join(out, "htdemucs", track)
+os.makedirs(d, exist_ok=True)
+sr = 44100
+t = np.arange(sr) / sr
+tone = lambda f: (0.3 * np.sin(2 * np.pi * f * t) * np.minimum(1, np.minimum(t / 0.01, (1 - t) / 0.03))).astype("float32")
+kick = np.zeros(sr, dtype="float32")
+tk = np.arange(int(0.25 * sr)) / sr
+kick[int(0.5 * sr):int(0.5 * sr) + len(tk)] = np.sin(2 * np.pi * np.cumsum(50 + 100 * np.exp(-tk * 40)) / sr) * np.exp(-tk * 14)
+for name, y in {"vocals": tone(440.0), "bass": tone(82.41), "drums": kick,
+                "other": sum(tone(f) for f in (261.63, 329.63, 392.0)) / 1.0}.items():
+    sf.write(os.path.join(d, name + ".wav"), y.astype("float32"), sr)
+'''
+
+
+@pytest.fixture
+def fake_demucs(tmp_path, monkeypatch):
+    pkg = tmp_path / "fakepkgs" / "demucs"
+    pkg.mkdir(parents=True)
+    (pkg / "__init__.py").write_text("")
+    (pkg / "__main__.py").write_text(FAKE_DEMUCS)
+    monkeypatch.syspath_prepend(str(tmp_path / "fakepkgs"))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "fakepkgs") + os.pathsep + os.environ.get("PYTHONPATH", ""))
+
+
+def test_song_mode_splits_and_converts_each_stem(fake_demucs):
+    src = write_wav(tone(60, 1.0), "song.wav")
+    out = os.path.join(tempfile.mkdtemp(), "song.mid")
+    a2m.convert(src, out, "song")
+    _, _, tracks = read_midi(out)
+    assert set(tracks) - {"t0"} == {"Vocals", "Bass", "Chords", "Drums"}  # t0 = unnamed tempo track
+    assert [n[2] for n in tracks["Vocals"]] == [69]  # A4
+    assert [n[2] for n in tracks["Bass"]] == [40]  # E2
+    assert sorted({n[2] for n in tracks["Chords"]}) == [60, 64, 67]
+    assert [n[2] for n in tracks["Drums"]] == [a2m.KICK]
+    assert {n[4] for n in tracks["Vocals"]} == {0} and {n[4] for n in tracks["Bass"]} == {1}
+    assert {n[4] for n in tracks["Drums"]} == {9}
+
+
+def test_song_mode_cleans_up_temp_files(fake_demucs, monkeypatch):
+    made = []
+    real = tempfile.mkdtemp
+    monkeypatch.setattr(tempfile, "mkdtemp", lambda *a, **k: made.append(real(*a, **k)) or made[-1])
+    src = write_wav(tone(60, 1.0), "song2.wav")
+    a2m.convert(src, src + ".mid", "song")
+    assert any("audio2midi_stems_" in m for m in made)
+    assert not any(os.path.exists(m) for m in made if "audio2midi_stems_" in m)
+
+
+def test_song_mode_without_demucs_gives_install_hint(monkeypatch):
+    import stems
+
+    monkeypatch.setattr(stems, "available", lambda: False)
+    src = write_wav(tone(60, 1.0), "nodemucs.wav")
+    with pytest.raises(RuntimeError, match="pip install -r requirements-stems.txt"):
+        a2m.convert(src, src + ".mid", "song")

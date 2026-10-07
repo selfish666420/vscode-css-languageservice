@@ -23,7 +23,7 @@ from scipy import ndimage, signal
 TARGET_SR = 22050
 PPQ = 480  # MIDI ticks per quarter note
 
-MODES = ("melody", "chords", "drums", "all")
+MODES = ("melody", "chords", "drums", "all", "song")
 QUANTIZE_CHOICES = ("off", "1/4", "1/8", "1/16", "1/32")
 
 # General-MIDI drum notes (FL Studio's FPC and most drum kits follow this map).
@@ -170,10 +170,10 @@ def _velocity(level_db: float, lo_db: float = -40.0) -> int:
     return int(round(40 + 87 * frac))
 
 
-def audio_to_melody(x: np.ndarray, sr: int, sensitivity: float = 0.5) -> List[Note]:
+def audio_to_melody(x: np.ndarray, sr: int, sensitivity: float = 0.5, fmin: float = 55.0) -> List[Note]:
     hop = 256
     thresh = 0.10 + 0.15 * sensitivity  # more sensitive -> accept less clean pitches
-    f0, ap, rms = yin_pitch(x, sr, hop=hop, thresh=thresh)
+    f0, ap, rms = yin_pitch(x, sr, fmin=fmin, hop=hop, thresh=thresh)
     ref = max(float(rms.max()), 1e-9)
     db = 20 * np.log10(np.maximum(rms, 1e-9) / ref)
     gate_db = -42.0 - 20.0 * sensitivity  # -42 dB .. -62 dB
@@ -554,6 +554,23 @@ def convert(
     say(f"Audio length: {len(x) / sr:.1f} seconds")
 
     tracks: List[Track] = []
+    if mode == "song":
+        import shutil
+        import tempfile
+
+        import stems
+
+        work = tempfile.mkdtemp(prefix="audio2midi_stems_")
+        try:
+            parts = stems.separate(in_path, work, log=say)
+            say("Listening to each part on its own ...")
+            st = {name: load_audio(p)[0] for name, p in parts.items()}
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        tracks.append(Track("Vocals", audio_to_melody(st["vocals"], sr, sensitivity), channel=0))
+        tracks.append(Track("Bass", audio_to_melody(st["bass"], sr, sensitivity, fmin=35.0), channel=1, program=33))
+        tracks.append(Track("Chords", audio_to_chords(st["other"], sr, sensitivity), channel=2))
+        tracks.append(Track("Drums", audio_to_drums(st["drums"], sr, sensitivity), channel=9))
     if mode in ("melody", "all"):
         say("Listening for a melody ...")
         tracks.append(Track("Melody", audio_to_melody(x, sr, sensitivity), channel=0))

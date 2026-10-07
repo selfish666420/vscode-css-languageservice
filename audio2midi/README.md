@@ -15,6 +15,7 @@ It can listen for three kinds of sound:
 | **Chords**   | piano, guitar, pads (many notes at once)        | stacked notes                         |
 | **Drums**    | a drum loop                                     | kick, snare, hats, toms, crash        |
 | **Everything** | a bit of all of it                            | all three, each on its own track      |
+| **Full song**  | a finished song (needs the extra install below) | splits it into vocals / bass / drums / other first, then converts each part with the right mode |
 
 > **This is a standalone program, not a plugin that lives inside FL Studio.**
 > You run it next to FL Studio, make a `.mid` file, then drag that file in.
@@ -106,9 +107,36 @@ Computers listening to music is hard. It is good, not magic.
   Everything is plain notes with a loudness.
 - It does not guess the tempo for you. You type it.
 
-If you have a full song, try **splitting it into parts first** (vocals, bass, drums)
-with a stem-splitter, then convert each part with the matching mode.
+If you have a full song, use **Full song** mode (see below) so each part is converted on its own.
 Results are far better that way.
+
+## Full songs: splitting into parts first (optional, slow)
+
+A full song has everything mixed together, which confuses the converter. "Full song"
+mode first pulls the song apart into four parts with a free tool called **Demucs**,
+then listens to each part on its own:
+
+| Part   | Converted as | MIDI track |
+|--------|--------------|------------|
+| Vocals | melody       | Vocals     |
+| Bass   | melody (low) | Bass       |
+| Other (guitars, keys, synths) | chords | Chords |
+| Drums  | drums        | Drums      |
+
+To turn it on (one time), open a Command Prompt in the `audio2midi` folder and type:
+
+```
+pip install -r requirements-stems.txt
+```
+
+This is a **big download (a few GB)** because it brings PyTorch. The first run also
+downloads the splitting model. A 3-minute song takes a few minutes on a normal PC
+(much faster with an NVIDIA graphics card). It only works with `run.bat`, not the
+`.exe`. You can keep using the other modes without installing it.
+
+> Honest note: this part is wired up and tested with a stand-in splitter, but I could
+> not download the real Demucs model where I built it, so I have **not** tried it on a
+> real song. If it fails on your computer, the error message will say why.
 
 ## Using it from the command line (optional)
 
@@ -117,7 +145,7 @@ python audio2midi.py my_loop.wav -m drums --bpm 128 -q 1/16
 python audio2midi.py my_vocal.mp3 -m melody -s 0.6 -o vocal.mid
 ```
 
-- `-m` is `melody`, `chords`, `drums` or `all`
+- `-m` is `melody`, `chords`, `drums`, `all` or `song`
 - `--bpm` is your project tempo
 - `-q` is `off`, `1/4`, `1/8`, `1/16` or `1/32`
 - `-s` is sensitivity from `0` to `1`
@@ -140,6 +168,7 @@ pattern, open and closed hats) and check that the notes come back out.
 | File               | What it is                                        |
 |--------------------|---------------------------------------------------|
 | `audio2midi.py`    | the engine (pitch tracking, chords, drums, MIDI writer) |
+| `stems.py`         | optional song splitter (Demucs)                   |
 | `gui.py`           | the window                                        |
 | `test_audio2midi.py` | the tests                                       |
 | `run.bat`          | double-click launcher for Windows                 |

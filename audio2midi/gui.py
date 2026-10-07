@@ -17,6 +17,7 @@ MODE_LABELS = {
     "Chords  (piano, guitar, pads - many notes at once)": "chords",
     "Drums  (kick, snare, hats...)": "drums",
     "Everything  (all three, as separate tracks)": "all",
+    "Full song  (splits into vocals / bass / drums / other first - slow, needs extra install)": "song",
 }
 AUDIO_TYPES = [("Audio files", "*.wav *.flac *.ogg *.mp3 *.aiff *.aif"), ("All files", "*.*")]
 
